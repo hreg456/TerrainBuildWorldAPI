@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, Response
 import requests
 from io import BytesIO
 from cachetools import TTLCache
@@ -6,10 +6,14 @@ import math
 
 app = Flask(__name__)
 
-# Cache for tiles/elevation
-tile_cache = TTLCache(maxsize=100, ttl=300)  # store up to 100 tiles for 5 min
-elev_cache = TTLCache(maxsize=500, ttl=300)  # store elevations for 5 min
+# === CACHE SETTINGS ===
+tile_cache = TTLCache(maxsize=200, ttl=600)  # cache 200 tiles for 10 min
+elev_cache = TTLCache(maxsize=500, ttl=300)  # cache elevation for 5 min
 
+# === CONFIG ===
+GPXZ_KEY = "ak_Ge4wEM8B_GepEI242D3wy9Mxd"  # replace with your GPXZ key
+
+# === ROUTES ===
 @app.route('/')
 def home():
     return jsonify({"status": "on"})
@@ -24,42 +28,24 @@ def get_tile():
         return jsonify({"error": "Missing parameters"}), 400
 
     try:
-        # Convert tile x,y,z to lat/lon bounds for EPSG:4326
         z = int(z)
         x = int(x)
         y = int(y)
-        n = 2.0 ** z
 
-        lon_min = x / n * 360.0 - 180.0
-        lon_max = (x + 1) / n * 360.0 - 180.0
-        lat_min_rad = math.atan(math.sinh(math.pi * (1 - 2 * (y + 1) / n)))
-        lat_max_rad = math.atan(math.sinh(math.pi * (1 - 2 * y / n)))
-        lat_min = math.degrees(lat_min_rad)
-        lat_max = math.degrees(lat_max_rad)
-
-        bbox = f"{lat_min},{lon_min},{lat_max},{lon_max}"
-
-        # NASA SVS WMS URL
-        wms_url = (
-            "https://svs.gsfc.nasa.gov/cgi-bin/wms?"
-            f"SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap"
-            f"&LAYERS=SRTM30"  # <--- valid layer
-            f"&CRS=EPSG:4326"
-            f"&BBOX={bbox}"
-            f"&WIDTH=256&HEIGHT=256&FORMAT=image/png"
-        )
+        # GPXZ tile URL
+        tile_url = f"https://tiles.gpxz.io/satellite/{z}/{x}/{y}.png?key={GPXZ_KEY}"
 
         # Check cache first
-        if wms_url in tile_cache:
-            tile_bytes = tile_cache[wms_url]
-            return send_file(BytesIO(tile_bytes), mimetype="image/png")
+        if tile_url in tile_cache:
+            return Response(tile_cache[tile_url], content_type="image/png")
 
-        res = requests.get(wms_url, timeout=10)
+        # Fetch tile
+        res = requests.get(tile_url, timeout=10)
         if res.status_code == 200:
-            tile_cache[wms_url] = res.content
-            return send_file(BytesIO(res.content), mimetype="image/png")
+            tile_cache[tile_url] = res.content
+            return Response(res.content, content_type="image/png")
         else:
-            return jsonify({"error": f"WMS request failed: {res.status_code}"}), 500
+            return jsonify({"error": f"Tile fetch failed: {res.status_code}"}), res.status_code
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -89,5 +75,6 @@ def get_elevation():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# === MAIN ===
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
