@@ -11,7 +11,7 @@ tile_cache = TTLCache(maxsize=200, ttl=600)  # cache 200 tiles for 10 min
 elev_cache = TTLCache(maxsize=500, ttl=300)  # cache elevation for 5 min
 
 # === CONFIG ===
-GPXZ_KEY = "ak_Ge4wEM8B_GepEI242D3wy9Mxd"  # replace with your GPXZ key
+GPXZ_KEY = "YOUR_API_KEY_HERE"  # replace with your GPXZ key
 
 # === ROUTES ===
 @app.route('/')
