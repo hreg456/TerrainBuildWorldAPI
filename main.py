@@ -1,19 +1,17 @@
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, send_file
 import requests
 from io import BytesIO
 from cachetools import TTLCache
-import math
 
 app = Flask(__name__)
 
-# === CACHE SETTINGS ===
-tile_cache = TTLCache(maxsize=200, ttl=600)  # cache 200 tiles for 10 min
-elev_cache = TTLCache(maxsize=500, ttl=300)  # cache elevation for 5 min
+# Cache for tiles/elevation
+tile_cache = TTLCache(maxsize=200, ttl=300)  # store up to 200 tiles for 5 min
+elev_cache = TTLCache(maxsize=500, ttl=300)  # store elevations for 5 min
 
-# === CONFIG ===
-GPXZ_KEY = "ak_Ge4wEM8B_GepEI242D3wy9Mxd"  # replace with your GPXZ key
+# Your GPXZ token
+GPXZ_TOKEN = "ak_Ge4wEM8B_GepEI242D3wy9Mxd"
 
-# === ROUTES ===
 @app.route('/')
 def home():
     return jsonify({"status": "on"})
@@ -28,25 +26,20 @@ def get_tile():
         return jsonify({"error": "Missing parameters"}), 400
 
     try:
-        z = int(z)
-        x = int(x)
-        y = int(y)
+        z, x, y = int(z), int(x), int(y)
+        layer = "satellite"
+        url = f"https://tile.gpxz.io/{layer}/{z}/{x}/{y}.png?access_token={GPXZ_TOKEN}"
 
-        # GPXZ tile URL
-        tile_url = f"https://tiles.gpxz.io/satellite/{z}/{x}/{y}.png?key={GPXZ_KEY}"
+        # Serve from cache if available
+        if url in tile_cache:
+            return send_file(BytesIO(tile_cache[url]), mimetype="image/png")
 
-        # Check cache first
-        if tile_url in tile_cache:
-            return Response(tile_cache[tile_url], content_type="image/png")
-
-        # Fetch tile
-        res = requests.get(tile_url, timeout=10)
+        res = requests.get(url, timeout=5)
         if res.status_code == 200:
-            tile_cache[tile_url] = res.content
-            return Response(res.content, content_type="image/png")
+            tile_cache[url] = res.content
+            return send_file(BytesIO(res.content), mimetype="image/png")
         else:
-            return jsonify({"error": f"Tile fetch failed: {res.status_code}"}), res.status_code
-
+            return jsonify({"error": f"Tile not found (status {res.status_code})"}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -75,6 +68,5 @@ def get_elevation():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# === MAIN ===
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
