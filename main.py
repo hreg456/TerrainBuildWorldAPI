@@ -1,72 +1,58 @@
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify
 import requests
 from io import BytesIO
-from cachetools import TTLCache
+from PIL import Image
 
 app = Flask(__name__)
 
-# Cache for tiles/elevation
-tile_cache = TTLCache(maxsize=200, ttl=300)  # store up to 200 tiles for 5 min
-elev_cache = TTLCache(maxsize=500, ttl=300)  # store elevations for 5 min
-
-# Your GPXZ token
 GPXZ_TOKEN = "ak_Ge4wEM8B_GepEI242D3wy9Mxd"
+GPXZ_TILE_URL = "https://api.gpxz.io/tiles/{z}/{x}/{y}.png?access_token={token}"
 
-@app.route('/')
+@app.route("/")
 def home():
     return jsonify({"status": "on"})
 
-@app.route('/tile')
+@app.route("/tile")
 def get_tile():
-    z = request.args.get('z')
-    x = request.args.get('x')
-    y = request.args.get('y')
+    z = request.args.get("z")
+    x = request.args.get("x")
+    y = request.args.get("y")
 
     if not all([z, x, y]):
         return jsonify({"error": "Missing parameters"}), 400
 
     try:
-        z, x, y = int(z), int(x), int(y)
-        layer = "satellite"
-        url = f"https://tile.gpxz.io/{layer}/{z}/{x}/{y}.png?access_token={GPXZ_TOKEN}"
+        z = int(z)
+        x = int(x)
+        y = int(y)
+    except ValueError:
+        return jsonify({"error": "Invalid parameters"}), 400
 
-        # Serve from cache if available
-        if url in tile_cache:
-            return send_file(BytesIO(tile_cache[url]), mimetype="image/png")
-
-        res = requests.get(url, timeout=5)
-        if res.status_code == 200:
-            tile_cache[url] = res.content
-            return send_file(BytesIO(res.content), mimetype="image/png")
-        else:
-            return jsonify({"error": f"Tile not found (status {res.status_code})"}), 404
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/elevation')
-def get_elevation():
-    lat = request.args.get('lat')
-    lon = request.args.get('lon')
-
-    if not all([lat, lon]):
-        return jsonify({"error": "Missing lat or lon"}), 400
-
-    key = f"{lat}_{lon}"
-    if key in elev_cache:
-        return jsonify({"lat": lat, "lon": lon, "elevation": elev_cache[key]})
+    tile_url = GPXZ_TILE_URL.format(z=z, x=x, y=y, token=GPXZ_TOKEN)
 
     try:
-        # Using free OpenTopoData API for elevation
-        r = requests.get(f"https://api.opentopodata.org/v1/test-dataset?locations={lat},{lon}", timeout=5)
-        data = r.json()
-        if "results" in data and len(data["results"]) > 0:
-            elevation = data["results"][0]["elevation"]
-            elev_cache[key] = elevation
-            return jsonify({"lat": lat, "lon": lon, "elevation": elevation})
-        else:
-            return jsonify({"error": "No elevation data"}), 404
+        res = requests.get(tile_url, timeout=10)
+        res.raise_for_status()
+
+        # Open the PNG image
+        img = Image.open(BytesIO(res.content))
+        img = img.convert("RGB")  # Ensure RGB
+
+        width, height = img.size
+        tile_data = []
+
+        for y_pix in range(height):
+            row = []
+            for x_pix in range(width):
+                r, g, b = img.getpixel((x_pix, y_pix))
+                row.append({"r": r, "g": g, "b": b})
+            tile_data.append(row)
+
+        return jsonify(tile_data)
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
