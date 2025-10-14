@@ -4,4 +4,3 @@ cachetools
 Pillow
 numpy
 gunicorn
-math
