@@ -13,12 +13,12 @@ CACHE_TTL = 300  # seconds
 tile_cache = TTLCache(maxsize=500, ttl=CACHE_TTL)
 MAPTILER_KEY = "llBJwuCjthGvMocsOkwp"
 OPENTOPO_KEY = "6a3cf43d33d4bc03d6cb609fc8828ae4"
-# OpenTopography dataset (options: SRTMGL3, SRTMGL1, AW3D30, etc.)
-OPENTOPO_DATASET = "SRTMGL3"
-# Resolution in meters (SRTMGL3 is ~90m)
-OPENTOPO_RESOLUTION = 90
+# OpenTopography dataset - using LIDAR at max resolution
+OPENTOPO_DATASET = "RGTM2Topo"
+# Resolution in meters (LIDAR is ~1m)
+OPENTOPO_RESOLUTION = 1
 # Tile size (how many samples to fetch)
-TILE_SIZE = 256
+TILE_SIZE = 512
 # -----------------------------
 # HELPER FUNCTIONS
 # -----------------------------
